@@ -17,7 +17,6 @@ model User {
   updatedAt      DateTime      @updatedAt
   Vehicle        Vehicle[]
   ServiceBooking Appointment[]
-  Invoice        Invoice[]
 }
 
 enum Role {
@@ -39,7 +38,6 @@ model ServiceCenter {
   updatedAt      DateTime      @updatedAt
   ServiceBooking Appointment[]
   Inventory      Inventory[]
-  Invoice        Invoice[]
 }
 
 enum Vtype {
@@ -91,6 +89,7 @@ model Appointment {
   serviceCenter   ServiceCenter @relation(fields: [serviceCenterId], references: [id])
 
   JobCards JobCards[]
+  Invoice  Invoice?
 
   @@index([vehicleId, userId, serviceCenterId])
 }
@@ -147,12 +146,20 @@ model Inventory {
   @@index([serviceCenterId])
 }
 
+enum InvoiceStatus {
+  SENT
+  PAID
+  OVERDUE
+}
+
 model Invoice {
-  id              String        @id @default(cuid())
-  userId          String
-  user            User          @relation(fields: [userId], references: [id])
-  totalAmount     Int
-  serviceCenterId String
-  serviceCenter   ServiceCenter @relation(fields: [serviceCenterId], references: [id])
-  billingDate     DateTime      @default(now())
+  id            String        @id @default(cuid())
+  invoiceCount  BigInt        @default(autoincrement())
+  invoiceNumber String        @unique
+  totalAmount   Int
+  billingDate   DateTime      @default(now())
+  dueDate       DateTime      @default(dbgenerated("now() + interval '7 days'"))
+  status        InvoiceStatus @default(SENT)
+  appointmentId String        @unique
+  appointment   Appointment   @relation(fields: [appointmentId], references: [id])
 }

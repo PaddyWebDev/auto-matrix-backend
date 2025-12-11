@@ -289,4 +289,71 @@ app.patch(
   }
 );
 
+app.post(
+  "/:appointmentId/invoice/create",
+  async function (request: Request, response: Response) {
+    try {
+      const { appointmentId } = request.params;
+      const { totalAmount } = request.body;
+
+      if (!appointmentId) {
+        return response.status(400).send("Appointment Id is required");
+      }
+
+      if (!totalAmount) {
+        return response.status(400).send("Total Amount is required");
+      }
+
+      const checkIfAppointmentExist = await prisma.appointment.findUnique({
+        where: {
+          id: appointmentId,
+        },
+        select: {
+          serviceType: true,
+          userId: true,
+        },
+      });
+      if (!checkIfAppointmentExist) {
+        return response.status(404).send("Appointment Not Found");
+      }
+
+      const newInVoice = await prisma.$transaction(async (tx) => {
+        // Step 1: Create invoice to get invoiceCount
+        const created = await tx.invoice.create({
+          data: {
+            totalAmount,
+            appointmentId,
+            invoiceNumber: "TEMP", // placeholder, will overwrite
+          },
+        });
+
+        // Step 2: Update the invoiceNumber with formatted value
+        const updated = await tx.invoice.update({
+          where: { id: created.id },
+          data: {
+            invoiceNumber: `INV-${String(created.invoiceCount).padStart(
+              6,
+              "0"
+            )}`,
+          },
+        });
+
+        return updated;
+      });
+      const safeInvoice = {
+        ...newInVoice,
+        invoiceCount: Number(newInVoice.invoiceCount),
+      };
+      io.emit(
+        `new-invoice-${checkIfAppointmentExist.userId}`,
+        await encryptSocketData(JSON.stringify(safeInvoice))
+      );
+      return response.status(201).send("Invoice Generated Successfully");
+    } catch (error) {
+      console.log(error);
+      return response.status(500).send("Internal Server Error");
+    }
+  }
+);
+
 export default app;

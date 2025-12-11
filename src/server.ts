@@ -10,7 +10,6 @@ import http from "http";
 import { Server } from "socket.io";
 
 const app: Express = express();
-const prisma = new PrismaClient();
 const PORT = 9000;
 const server = http.createServer(app);
 const io = new Server(server, {
