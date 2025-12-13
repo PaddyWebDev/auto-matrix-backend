@@ -109,9 +109,9 @@ model JobCards {
 model JobCardParts {
   id        String    @id @default(uuid())
   jobCardId String
-  jobCard   JobCards  @relation(fields: [jobCardId], references: [id])
+  jobCard   JobCards  @relation(fields: [jobCardId], references: [id], onDelete: Cascade)
   partId    String
-  partUsed  Inventory @relation(fields: [partId], references: [id])
+  partUsed  Inventory @relation(fields: [partId], references: [id], onDelete: Cascade)
   quantity  Int
 }
 

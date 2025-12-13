@@ -113,8 +113,8 @@ app.delete(
   "/job-card/delete/:jobCardId",
   async (req: Request, res: Response) => {
     try {
-      const { jobCardId } = req.params;
-      const { appointmentId } = req.query;
+      const { jobCardId } = req.params as { jobCardId: string };
+      const { appointmentId } = req.query as { appointmentId: string };
 
       // Validation
       if (!jobCardId) {
@@ -128,11 +128,17 @@ app.delete(
       // Check if job card exists and belongs to appointment
       const existingJobCard = await prisma.jobCards.findFirst({
         where: {
-          id: String(jobCardId),
-          appointmentId: String(appointmentId),
+          id: jobCardId,
+          appointmentId,
         },
         select: {
           jobName: true,
+          JobCardParts: {
+            select: {
+              partId: true,
+              quantity: true,
+            },
+          },
         },
       });
 
@@ -141,8 +147,29 @@ app.delete(
       }
 
       // Delete job card
-      await prisma.jobCards.delete({
-        where: { id: String(jobCardId) },
+
+      await prisma.$transaction(async (tx) => {
+        // restore inventory
+        await Promise.all(
+          existingJobCard.JobCardParts.map((part) =>
+            tx.inventory.update({
+              where: { id: part.partId },
+              data: {
+                quantity: { increment: part.quantity },
+              },
+            })
+          )
+        );
+
+        // delete job card parts first (if no cascade)
+        await tx.jobCardParts.deleteMany({
+          where: { jobCardId },
+        });
+
+        // delete job card
+        await tx.jobCards.delete({
+          where: { id: jobCardId },
+        });
       });
 
       return res.status(200).send("Job card deleted successfully");
@@ -348,7 +375,10 @@ app.post(
         `new-invoice-${checkIfAppointmentExist.userId}`,
         await encryptSocketData(JSON.stringify(safeInvoice))
       );
-      return response.status(201).send("Invoice Generated Successfully");
+      return response.status(201).json({
+        message: "Invoice Generated Successfully",
+        billing_date: newInVoice.billingDate,
+      });
     } catch (error) {
       console.log(error);
       return response.status(500).send("Internal Server Error");
