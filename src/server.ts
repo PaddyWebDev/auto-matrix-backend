@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import appointmentRoute from "./api/appointments";
 import inventoryRoute from "./api/inventory";
 import vehicleRoute from "./api/vehicles";
+import notificationRoute from "./api/notifications";
 import express, { Request, Express, Response } from "express";
 dotenv.config();
 import http from "http";
@@ -26,6 +27,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api/appointments/", appointmentRoute);
 app.use("/api/inventory/", inventoryRoute);
 app.use("/api/vehicles/", vehicleRoute);
+app.use("/api/notifications/", notificationRoute);
 
 io.on("connection", (socket) => {
   console.log("a user connected", socket.id);
@@ -33,13 +35,19 @@ io.on("connection", (socket) => {
 io.on("disconnect", (socket) => {
   console.log("user disconnected", socket.id);
 });
+
+app.get("/", (req, response: Response) => {
+  return response.json({
+    message: "Backend for Auto Matrix",
+  });
+});
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "OK", timestamp: new Date().toISOString() });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+server.listen(PORT, () => {
+  console.log(`Server running on port: ${PORT}`);
 });
 
 export { io };

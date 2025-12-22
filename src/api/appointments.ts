@@ -1,10 +1,10 @@
 import express, { Express, Request, Response } from "express";
-import { json, z } from "zod";
 import prisma from "../lib/prisma";
 import { checkIfCustomerExistById } from "../utils/customer";
 import { io } from "../server";
 import { encryptSocketData } from "../utils/cryptr";
-import { bookingStatus } from "@prisma/client";
+import { bookingStatus, NotificationType } from "@prisma/client";
+import { format } from "date-fns";
 
 const app: Express = express();
 
@@ -64,6 +64,60 @@ app.post("/create", async (req: Request, res: Response) => {
     io.emit(
       `new-appointment-${appointment.serviceCenterId}`,
       await encryptSocketData(JSON.stringify(appointment))
+    );
+
+    const serviceCenterData = await prisma.serviceCenter.findUnique({
+      where: {
+        id: serviceCenterId,
+      },
+      select: {
+        name: true,
+        phoneNumber: true,
+      },
+    });
+    io.emit(
+      `new-appointment-${appointment.userId}`,
+      await encryptSocketData(
+        JSON.stringify({
+          id: appointment.id,
+          serviceType: appointment.serviceType,
+          status: appointment.status,
+          requestedDate: appointment.requestedDate,
+          Vehicle: {
+            select: {
+              vehicleName: appointment.Vehicle.vehicleName,
+              vehicleMake: appointment.Vehicle.vehicleMake,
+              vehicleModel: appointment.Vehicle.vehicleModel,
+            },
+          },
+          serviceCenter: {
+            select: {
+              name: serviceCenterData?.name,
+              phoneNumber: serviceCenterData?.phoneNumber,
+            },
+          },
+        })
+      )
+    );
+
+    const formattedDate = format(
+      new Date(appointment.requestedDate),
+      "dd MMM yyyy, hh:mm a"
+    );
+
+    const new_serviceCenter_notification =
+      await prisma.serviceCenterNotification.create({
+        data: {
+          serviceCenterId,
+          type: NotificationType.APPOINTMENT_CREATED,
+          message: `New appointment received: ${appointment.owner.name} has requested ${serviceType} for ${appointment.Vehicle.vehicleMake} ${appointment.Vehicle.vehicleModel} on ${formattedDate}.`,
+          appointmentId: appointment.id,
+        },
+      });
+
+    io.emit(
+      `notification-service-center-${serviceCenterId}`,
+      await encryptSocketData(JSON.stringify(new_serviceCenter_notification))
     );
 
     return res.status(201).send("Appointment Created");
@@ -300,14 +354,56 @@ app.patch(
         completionDate = new Date();
       }
 
-      await prisma.appointment.update({
+      const appointment = await prisma.appointment.update({
         where: { id: appointmentId },
         data: {
           status: status,
           slaBreached: isBreached,
           actualCompletionDate: completionDate,
         },
+        select: {
+          userId: true,
+          serviceType: true,
+          Vehicle: {
+            select: {
+              vehicleName: true,
+              vehicleMake: true,
+            },
+          },
+        },
       });
+
+      let message = "";
+      let type;
+      if (status === bookingStatus.APPROVED) {
+        message = `Your appointment for ${appointment.serviceType} on ${appointment.Vehicle.vehicleName} (${appointment.Vehicle.vehicleMake}) has been approved.`;
+        type = NotificationType.APPOINTMENT_APPROVED;
+      } else if (status === bookingStatus.REJECTED) {
+        message = `Your appointment for ${appointment.serviceType} on ${appointment.Vehicle.vehicleName} (${appointment.Vehicle.vehicleMake}) has been rejected.`;
+        type = NotificationType.APPOINTMENT_REJECTED;
+      } else if (status === bookingStatus.InService) {
+        message = `Your appointment for ${appointment.serviceType} on ${appointment.Vehicle.vehicleName} (${appointment.Vehicle.vehicleMake}) is now in service.`;
+        type = NotificationType.APPOINTMENT_IN_SERVICE;
+      } else {
+        message = `Your appointment for ${appointment.serviceType} on ${appointment.Vehicle.vehicleName} (${appointment.Vehicle.vehicleMake}) is completed.`;
+        type = NotificationType.APPOINTMENT_COMPLETED;
+      }
+
+      // Create notification in DB
+      const notification = await prisma.customerNotification.create({
+        data: {
+          customerId: appointment.userId,
+          message,
+          appointmentId: appointmentId,
+          type: type,
+        },
+      });
+
+      // Emit socket event
+      io.emit(
+        `notification-customer-${appointment.userId}`,
+        await encryptSocketData(JSON.stringify(notification))
+      );
 
       return response.status(200).send("Status Updated Successfully");
     } catch (error) {
@@ -375,6 +471,7 @@ app.post(
         `new-invoice-${checkIfAppointmentExist.userId}`,
         await encryptSocketData(JSON.stringify(safeInvoice))
       );
+
       return response.status(201).json({
         message: "Invoice Generated Successfully",
         billing_date: newInVoice.billingDate,

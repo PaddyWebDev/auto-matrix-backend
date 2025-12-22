@@ -17,6 +17,8 @@ model User {
   updatedAt      DateTime      @updatedAt
   Vehicle        Vehicle[]
   ServiceBooking Appointment[]
+
+  CustomerNotification CustomerNotification[]
 }
 
 enum Role {
@@ -24,6 +26,7 @@ enum Role {
   CUSTOMER
   SERVICE_CENTER
 }
+
 
 model ServiceCenter {
   id             String        @id @default(cuid())
@@ -38,6 +41,8 @@ model ServiceCenter {
   updatedAt      DateTime      @updatedAt
   ServiceBooking Appointment[]
   Inventory      Inventory[]
+
+  ServiceCenterNotification ServiceCenterNotification[]
 }
 
 enum Vtype {
@@ -60,6 +65,8 @@ model Vehicle {
 }
 
 enum bookingStatus {
+  APPROVED
+  REJECTED
   PENDING
   InService
   COMPLETED
@@ -87,11 +94,11 @@ model Appointment {
 
   serviceCenterId String
   serviceCenter   ServiceCenter @relation(fields: [serviceCenterId], references: [id])
-
   JobCards JobCards[]
   Invoice  Invoice?
-
+  CustomerNotification CustomerNotification[]
   @@index([vehicleId, userId, serviceCenterId])
+  ServiceCenterNotification ServiceCenterNotification[]
 }
 
 model JobCards {
@@ -105,6 +112,8 @@ model JobCards {
 
   @@index([appointmentId])
 }
+
+
 
 model JobCardParts {
   id        String    @id @default(uuid())
@@ -138,8 +147,6 @@ model Inventory {
 
   createdAt    DateTime       @default(now())
   JobCardParts JobCardParts[]
-
-  // 🔗 relation added — nothing else
   serviceCenterId String
   serviceCenter   ServiceCenter @relation(fields: [serviceCenterId], references: [id])
 
@@ -162,4 +169,50 @@ model Invoice {
   status        InvoiceStatus @default(SENT)
   appointmentId String        @unique
   appointment   Appointment   @relation(fields: [appointmentId], references: [id])
+}
+
+enum NotificationTargetType  {
+  CUSTOMER
+  SERVICE_CENTER
+}
+
+enum NotificationType {
+  APPOINTMENT_CREATED
+  APPOINTMENT_APPROVED
+  APPOINTMENT_REJECTED
+  APPOINTMENT_IN_SERVICE
+  APPOINTMENT_COMPLETED
+  INVOICE_GENERATED
+}
+
+model CustomerNotification {
+  id            String   @id @default(cuid())
+  customerId    String
+  customer      User     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  type          NotificationType
+  message       String
+  appointmentId String?
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+  isRead        Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@index([customerId])
+  @@index([appointmentId])
+}
+
+
+model ServiceCenterNotification {
+  id               String   @id @default(cuid())
+  serviceCenterId  String
+  serviceCenter    ServiceCenter @relation(fields: [serviceCenterId], references: [id], onDelete: Cascade)
+  type             NotificationType
+  message          String
+  appointmentId    String?
+  appointment      Appointment? @relation(fields: [appointmentId], references: [id])
+
+  isRead           Boolean  @default(false)
+  createdAt        DateTime @default(now())
+
+  @@index([serviceCenterId])
+  @@index([appointmentId])
 }
