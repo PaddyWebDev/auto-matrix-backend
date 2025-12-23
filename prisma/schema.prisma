@@ -27,7 +27,6 @@ enum Role {
   SERVICE_CENTER
 }
 
-
 model ServiceCenter {
   id             String        @id @default(cuid())
   name           String
@@ -43,6 +42,8 @@ model ServiceCenter {
   Inventory      Inventory[]
 
   ServiceCenterNotification ServiceCenterNotification[]
+
+  Mechanic Mechanic[]
 }
 
 enum Vtype {
@@ -89,16 +90,43 @@ model Appointment {
   slaDeadline          DateTime?
   actualCompletionDate DateTime?
   slaBreached          Boolean             @default(false)
-  priority             AppointmentPriority @default(MEDIUM)
+  userUrgency          AppointmentPriority @default(MEDIUM)
   status               bookingStatus
 
-  serviceCenterId String
-  serviceCenter   ServiceCenter @relation(fields: [serviceCenterId], references: [id])
-  JobCards JobCards[]
-  Invoice  Invoice?
-  CustomerNotification CustomerNotification[]
-  @@index([vehicleId, userId, serviceCenterId])
+  serviceCenterId           String
+  serviceCenter             ServiceCenter               @relation(fields: [serviceCenterId], references: [id])
+  JobCards                  JobCards[]
+  Invoice                   Invoice?
+  CustomerNotification      CustomerNotification[]
   ServiceCenterNotification ServiceCenterNotification[]
+  MechanicAssignment        MechanicAssignment[]
+  Triage                    Triage[]
+
+  @@index([vehicleId, userId, serviceCenterId])
+}
+
+enum TriageSource {
+  AUTO
+  MANUAL
+}
+
+enum TriageReason {
+  INITIAL
+  ESCALATION
+  REOPEN
+  MANUAL_OVERRIDE
+}
+
+model Triage {
+  id              String              @id @default(cuid())
+  appointmentId   String              @unique
+  appointment     Appointment         @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  decidedPriority AppointmentPriority // final decision
+  source          TriageSource
+  reason          TriageReason
+  createdAt       DateTime            @default(now())
+
+  @@index([appointmentId])
 }
 
 model JobCards {
@@ -112,8 +140,6 @@ model JobCards {
 
   @@index([appointmentId])
 }
-
-
 
 model JobCardParts {
   id        String    @id @default(uuid())
@@ -136,6 +162,57 @@ enum Category {
   MISC
 }
 
+enum MechanicStatus {
+  ACTIVE
+  INACTIVE
+  ON_LEAVE
+}
+
+enum MechanicSpeciality {
+  ENGINE
+  BRAKES
+  ELECTRICAL
+  SUSPENSION
+  TRANSMISSION
+  BODYWORK
+  GENERAL_SERVICE
+}
+
+model Mechanic {
+  id              String             @id @default(cuid())
+  name            String
+  phoneNumber     String             @unique
+  email           String?            @unique
+  experienceYears Int
+  status          MechanicStatus     @default(ACTIVE)
+  speciality      MechanicSpeciality
+
+  serviceCenterId String
+  serviceCenter   ServiceCenter @relation(fields: [serviceCenterId], references: [id])
+  assignments MechanicAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([serviceCenterId, status])
+}
+
+model MechanicAssignment {
+  id            String @id @default(cuid())
+  appointmentId String
+  mechanicId    String
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id])
+  mechanic    Mechanic    @relation(fields: [mechanicId], references: [id])
+
+  assignedAt   DateTime  @default(now())
+  unassignedAt DateTime?
+
+
+  @@index([appointmentId])
+  @@index([mechanicId])
+}
+
 model Inventory {
   id        String    @id @default(uuid())
   name      String
@@ -145,10 +222,10 @@ model Inventory {
   unitPrice Int
   quantity  Int       @default(0)
 
-  createdAt    DateTime       @default(now())
-  JobCardParts JobCardParts[]
+  createdAt       DateTime       @default(now())
+  JobCardParts    JobCardParts[]
   serviceCenterId String
-  serviceCenter   ServiceCenter @relation(fields: [serviceCenterId], references: [id])
+  serviceCenter   ServiceCenter  @relation(fields: [serviceCenterId], references: [id])
 
   @@index([serviceCenterId])
 }
@@ -171,7 +248,7 @@ model Invoice {
   appointment   Appointment   @relation(fields: [appointmentId], references: [id])
 }
 
-enum NotificationTargetType  {
+enum NotificationTargetType {
   CUSTOMER
   SERVICE_CENTER
 }
@@ -186,32 +263,31 @@ enum NotificationType {
 }
 
 model CustomerNotification {
-  id            String   @id @default(cuid())
+  id            String           @id @default(cuid())
   customerId    String
-  customer      User     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer      User             @relation(fields: [customerId], references: [id], onDelete: Cascade)
   type          NotificationType
   message       String
   appointmentId String?
-  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
-  isRead        Boolean  @default(false)
-  createdAt     DateTime @default(now())
+  appointment   Appointment?     @relation(fields: [appointmentId], references: [id])
+  isRead        Boolean          @default(false)
+  createdAt     DateTime         @default(now())
 
   @@index([customerId])
   @@index([appointmentId])
 }
 
-
 model ServiceCenterNotification {
-  id               String   @id @default(cuid())
-  serviceCenterId  String
-  serviceCenter    ServiceCenter @relation(fields: [serviceCenterId], references: [id], onDelete: Cascade)
-  type             NotificationType
-  message          String
-  appointmentId    String?
-  appointment      Appointment? @relation(fields: [appointmentId], references: [id])
+  id              String           @id @default(cuid())
+  serviceCenterId String
+  serviceCenter   ServiceCenter    @relation(fields: [serviceCenterId], references: [id], onDelete: Cascade)
+  type            NotificationType
+  message         String
+  appointmentId   String?
+  appointment     Appointment?     @relation(fields: [appointmentId], references: [id])
 
-  isRead           Boolean  @default(false)
-  createdAt        DateTime @default(now())
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
 
   @@index([serviceCenterId])
   @@index([appointmentId])

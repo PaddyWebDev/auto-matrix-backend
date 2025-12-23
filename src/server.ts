@@ -1,11 +1,12 @@
 import cors from "cors";
 import dotenv from "dotenv";
-import { PrismaClient } from "@prisma/client";
 import appointmentRoute from "./api/appointments";
 import inventoryRoute from "./api/inventory";
 import vehicleRoute from "./api/vehicles";
 import notificationRoute from "./api/notifications";
+import serviceCenterRoute from "./api/service-center";
 import express, { Request, Express, Response } from "express";
+
 dotenv.config();
 import http from "http";
 import { Server } from "socket.io";
@@ -28,6 +29,7 @@ app.use("/api/appointments/", appointmentRoute);
 app.use("/api/inventory/", inventoryRoute);
 app.use("/api/vehicles/", vehicleRoute);
 app.use("/api/notifications/", notificationRoute);
+app.use("/api/service-center/", serviceCenterRoute);
 
 io.on("connection", (socket) => {
   console.log("a user connected", socket.id);
