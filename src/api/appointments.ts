@@ -3,14 +3,10 @@ import prisma from "../lib/prisma";
 import { checkIfCustomerExistById } from "../utils/customer";
 import { io } from "../server";
 import { encryptSocketData } from "../utils/cryptr";
-import {
-  bookingStatus,
-  MechanicStatus,
-  NotificationType,
-} from "@prisma/client";
+import { bookingStatus, NotificationType } from "@prisma/client";
 import { format } from "date-fns";
 import jobCardRoute from "./jobcard";
-
+import EventEmitter from "events";
 const app: Express = express();
 
 // Create appointment
@@ -23,6 +19,8 @@ app.post("/create", async (req: Request, res: Response) => {
       priority,
       serviceDeadline,
       userId,
+      isAccidental,
+      photos,
     } = req.body;
 
     if (
@@ -48,6 +46,8 @@ app.post("/create", async (req: Request, res: Response) => {
         status: "PENDING",
         slaDeadline: serviceDeadline,
         userUrgency: priority,
+        isAccidental: isAccidental || false,
+        photos: photos || [],
       },
       include: {
         Vehicle: {
@@ -138,6 +138,7 @@ app.patch(
     try {
       const { appointmentId } = request.params;
       const { status, priority } = request.body;
+
       if (!appointmentId) {
         return response.status(400).send("Appointment Id is required");
       }
@@ -169,55 +170,63 @@ app.patch(
       }
 
       const appointment = await prisma.$transaction(async (tx) => {
+        let appointment;
         // update the appointment status
-        const appointment = await tx.appointment.update({
-          where: { id: appointmentId },
-          data: {
-            status,
-            slaBreached: isBreached,
-            actualCompletionDate: completionDate,
-          },
-          select: {
-            userId: true,
-            serviceType: true,
-            Vehicle: {
-              select: {
-                vehicleName: true,
-                vehicleMake: true,
+        if (status === bookingStatus.COMPLETED) {
+          appointment = await tx.appointment.update({
+            where: { id: appointmentId },
+            data: {
+              status,
+              slaBreached: isBreached,
+              actualCompletionDate: completionDate,
+            },
+            select: {
+              userId: true,
+              serviceType: true,
+              serviceCenterId: true,
+              Mechanic: {
+                select: {
+                  id: true,
+                },
+              },
+              Vehicle: {
+                select: {
+                  vehicleMake: true,
+                  vehicleName: true,
+                },
               },
             },
-            MechanicAssignment: true,
-          },
-        });
+          });
 
-        if (status === bookingStatus.COMPLETED) {
           await Promise.all(
-            appointment.MechanicAssignment.map((assign) =>
-              tx.mechanicAssignment.update({
+            appointment.Mechanic.map((assign) =>
+              tx.mechanic.update({
                 where: { id: assign.id },
                 data: { unassignedAt: new Date() },
+                select: {
+                  id: true,
+                },
               })
             )
           );
-        }
-
-        if (status === bookingStatus.InService) {
+        } else if (status === bookingStatus.APPROVED) {
           if (!priority) {
             throw new Error("Priority is required for triage");
           }
 
           // create triage
-          await tx.triage.create({
+          await prisma.triage.create({
             data: {
               appointmentId,
               decidedPriority: priority,
               source: "MANUAL",
               reason: "MANUAL_OVERRIDE",
             },
+            select: { id: true },
           });
 
           // Check if only 1 manager is available
-          const availableMechanics = await tx.mechanic.findMany({
+          const availableMechanics = await prisma.mechanic.findMany({
             where: {
               serviceCenterId: checkIfAppointmentExist.serviceCenterId,
               status: "ACTIVE",
@@ -227,15 +236,60 @@ app.patch(
 
           // Auto-assign if only one mechanic available
           if (availableMechanics.length === 1 && availableMechanics[0]?.id) {
-            await tx.mechanicAssignment.create({
+            await prisma.mechanic.update({
+              where: {
+                id: availableMechanics[0].id,
+              },
               data: {
-                appointmentId,
-                mechanicId: availableMechanics[0].id,
+                assignedAt: new Date(),
+              },
+              select: {
+                id: true,
               },
             });
           }
-        }
 
+          appointment = await tx.appointment.update({
+            where: { id: appointmentId },
+            data: {
+              status,
+              userUrgency: priority,
+              slaBreached: isBreached,
+              actualCompletionDate: completionDate,
+            },
+            select: {
+              userId: true,
+              serviceType: true,
+              serviceCenterId: true,
+              Vehicle: {
+                select: {
+                  vehicleMake: true,
+                  vehicleName: true,
+                },
+              },
+            },
+          });
+        } else {
+          appointment = await tx.appointment.update({
+            where: { id: appointmentId },
+            data: {
+              status,
+              slaBreached: isBreached,
+              actualCompletionDate: completionDate,
+            },
+            select: {
+              userId: true,
+              serviceType: true,
+              serviceCenterId: true,
+              Vehicle: {
+                select: {
+                  vehicleMake: true,
+                  vehicleName: true,
+                },
+              },
+            },
+          });
+        }
         return appointment;
       });
 
@@ -271,6 +325,16 @@ app.patch(
         await encryptSocketData(JSON.stringify(notification))
       );
 
+      io.emit(
+        `status-update-appointment-${appointment.serviceCenterId}`,
+        await encryptSocketData(
+          JSON.stringify({
+            status: status,
+            appointmentId: appointmentId,
+          })
+        )
+      );
+
       return response.status(200).send("Status Updated Successfully");
     } catch (error) {
       return response.status(500).send("Internal Server Error");
@@ -302,19 +366,16 @@ app.post(
         where: { id: appointmentId },
         select: {
           serviceCenterId: true,
-          MechanicAssignment: true,
+          Mechanic: {
+            select: {
+              id: true,
+            },
+          },
         },
       });
 
       if (!appointment) {
         return response.status(404).send("Appointment Not Found");
-      }
-
-      // Check if mechanic is already assigned
-      if (appointment.MechanicAssignment.length > 0) {
-        return response
-          .status(400)
-          .send("Mechanic already assigned to this appointment");
       }
 
       // Check if mechanic exists and is active
@@ -332,11 +393,16 @@ app.post(
       }
 
       // assign the mechanic to the appointment
-      await prisma.mechanicAssignment.create({
-        data: {
-          appointmentId,
-          mechanicId,
+
+      await prisma.mechanic.update({
+        where: {
+          id: mechanicId,
         },
+        data: {
+          assignedAt: new Date(),
+          appointmentId,
+        },
+        select: { id: true },
       });
 
       return response.status(200).send("Mechanic Assigned Successfully");
@@ -371,13 +437,23 @@ app.post(
         select: {
           serviceType: true,
           userId: true,
+          Invoice: {
+            select: {
+              id: true,
+            },
+          },
         },
       });
+
       if (!checkIfAppointmentExist) {
         return response.status(404).send("Appointment Not Found");
       }
 
-      const newInVoice = await prisma.$transaction(async (tx) => {
+      if (checkIfAppointmentExist.Invoice?.id) {
+        return response.status(409).send("Invoice is already generated");
+      }
+
+      const newInVoiceId = await prisma.$transaction(async (tx) => {
         // Step 1: Create invoice to get invoiceCount
         const created = await tx.invoice.create({
           data: {
@@ -385,10 +461,14 @@ app.post(
             appointmentId,
             invoiceNumber: "TEMP", // placeholder, will overwrite
           },
+          select: {
+            invoiceCount: true,
+            id: true,
+          },
         });
 
         // Step 2: Update the invoiceNumber with formatted value
-        const updated = await tx.invoice.update({
+        await tx.invoice.update({
           where: { id: created.id },
           data: {
             invoiceNumber: `INV-${String(created.invoiceCount).padStart(
@@ -396,22 +476,102 @@ app.post(
               "0"
             )}`,
           },
+          select: { id: true },
         });
 
-        return updated;
+        return created.id;
       });
-      const safeInvoice = {
-        ...newInVoice,
-        invoiceCount: Number(newInVoice.invoiceCount),
-      };
+
+      const updatedInvoice = await prisma.invoice.findUnique({
+        where: { id: newInVoiceId },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          totalAmount: true,
+          billingDate: true,
+          dueDate: true,
+          status: true,
+          appointmentId: true,
+          appointment: {
+            select: {
+              Payment: {
+                select: {
+                  status: true,
+                  method: true,
+                  amount: true,
+                  paidAt: true,
+                  transactionId: true,
+                },
+              },
+              Vehicle: {
+                select: {
+                  vehicleName: true,
+                  vehicleMake: true,
+                  vehicleModel: true,
+                },
+              },
+              id: true,
+              status: true,
+              userId: true,
+              serviceType: true,
+              requestedDate: true,
+              slaDeadline: true,
+              actualCompletionDate: true,
+              serviceCenterId: true,
+              serviceCenter: {
+                select: {
+                  name: true,
+                  email: true,
+                  phoneNumber: true,
+                },
+              },
+              JobCards: {
+                select: {
+                  jobName: true,
+                  jobDescription: true,
+                  JobCardParts: {
+                    select: {
+                      quantity: true,
+                      partUsed: {
+                        select: {
+                          unitPrice: true,
+                          name: true,
+                        },
+                      },
+                    },
+                  },
+                  price: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!updatedInvoice) {
+        return response.json();
+      }
       io.emit(
         `new-invoice-${checkIfAppointmentExist.userId}`,
-        await encryptSocketData(JSON.stringify(safeInvoice))
+        await encryptSocketData(JSON.stringify(updatedInvoice))
+      );
+
+      const invoiceNotification = await prisma.customerNotification.create({
+        data: {
+          type: "INVOICE_GENERATED",
+          appointmentId,
+          customerId: checkIfAppointmentExist.userId,
+          message: `You have received invoice for the service request kindly pay before ${updatedInvoice.dueDate}`,
+        },
+      });
+      io.emit(
+        `notification-customer-${checkIfAppointmentExist.userId}`,
+        await encryptSocketData(JSON.stringify(invoiceNotification))
       );
 
       return response.status(201).json({
         message: "Invoice Generated Successfully",
-        billing_date: newInVoice.billingDate,
+        billing_date: updatedInvoice.billingDate,
       });
     } catch (error) {
       console.log(error);

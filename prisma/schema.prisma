@@ -80,27 +80,29 @@ enum AppointmentPriority {
 }
 
 model Appointment {
-  id                   String              @id @default(cuid())
-  vehicleId            String
-  Vehicle              Vehicle             @relation(fields: [vehicleId], references: [id])
-  userId               String
-  owner                User                @relation(fields: [userId], references: [id])
-  serviceType          String
-  requestedDate        DateTime            @default(now())
-  slaDeadline          DateTime?
-  actualCompletionDate DateTime?
-  slaBreached          Boolean             @default(false)
-  userUrgency          AppointmentPriority @default(MEDIUM)
-  status               bookingStatus
-
+  id                        String                      @id @default(cuid())
+  vehicleId                 String
+  userId                    String
+  serviceType               String
+  requestedDate             DateTime                    @default(now())
+  slaDeadline               DateTime?
+  actualCompletionDate      DateTime?
+  slaBreached               Boolean                     @default(false)
+  userUrgency               AppointmentPriority         @default(MEDIUM)
+  status                    bookingStatus
+  isAccidental              Boolean                     @default(false)
+  photos                    String[]
   serviceCenterId           String
+  owner                     User                        @relation(fields: [userId], references: [id])
+  Vehicle                   Vehicle                     @relation(fields: [vehicleId], references: [id])
   serviceCenter             ServiceCenter               @relation(fields: [serviceCenterId], references: [id])
   JobCards                  JobCards[]
   Invoice                   Invoice?
   CustomerNotification      CustomerNotification[]
   ServiceCenterNotification ServiceCenterNotification[]
-  MechanicAssignment        MechanicAssignment[]
   Triage                    Triage[]
+  Payment                   Payment?
+  Mechanic                  Mechanic[]
 
   @@index([vehicleId, userId, serviceCenterId])
 }
@@ -179,38 +181,27 @@ enum MechanicSpeciality {
 }
 
 model Mechanic {
-  id              String             @id @default(cuid())
-  name            String
-  phoneNumber     String             @unique
-  email           String?            @unique
-  experienceYears Int
-  status          MechanicStatus     @default(ACTIVE)
-  speciality      MechanicSpeciality
+  id                  String             @id @default(cuid())
+  name                String
+  phoneNumber         String             @unique
+  email               String?            @unique
+  experienceYears     Int
+  status              MechanicStatus     @default(ACTIVE)
+  speciality          MechanicSpeciality
+  appointmentId       String?
+  appointmentAssigned Appointment?       @relation(fields: [appointmentId], references: [id])
 
   serviceCenterId String
   serviceCenter   ServiceCenter @relation(fields: [serviceCenterId], references: [id])
-  assignments MechanicAssignment[]
+
+  assignedAt   DateTime?
+  unassignedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([serviceCenterId, status])
-}
-
-model MechanicAssignment {
-  id            String @id @default(cuid())
-  appointmentId String
-  mechanicId    String
-
-  appointment Appointment @relation(fields: [appointmentId], references: [id])
-  mechanic    Mechanic    @relation(fields: [mechanicId], references: [id])
-
-  assignedAt   DateTime  @default(now())
-  unassignedAt DateTime?
-
-
   @@index([appointmentId])
-  @@index([mechanicId])
 }
 
 model Inventory {
@@ -244,8 +235,10 @@ model Invoice {
   billingDate   DateTime      @default(now())
   dueDate       DateTime      @default(dbgenerated("now() + interval '7 days'"))
   status        InvoiceStatus @default(SENT)
-  appointmentId String        @unique
-  appointment   Appointment   @relation(fields: [appointmentId], references: [id])
+
+  appointmentId String      @unique
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+  Payment       Payment?
 }
 
 enum NotificationTargetType {
@@ -260,6 +253,8 @@ enum NotificationType {
   APPOINTMENT_IN_SERVICE
   APPOINTMENT_COMPLETED
   INVOICE_GENERATED
+  PAYMENT_PENDING
+  PAYMENT_OVERDUE
 }
 
 model CustomerNotification {
@@ -290,5 +285,43 @@ model ServiceCenterNotification {
   createdAt DateTime @default(now())
 
   @@index([serviceCenterId])
+  @@index([appointmentId])
+}
+
+// Payment and Forgot Password For Customer;
+enum PaymentStatus {
+  INITIATED
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  CARD
+  NET_BANKING
+}
+
+model Payment {
+  id String @id @default(cuid())
+
+  invoiceId String  @unique
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  appointmentId String      @unique
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  amount Int // store in smallest unit (paise)
+  method PaymentMethod
+  status PaymentStatus @default(INITIATED)
+
+  transactionId String?   @unique // gateway txn id
+  paidAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([invoiceId])
   @@index([appointmentId])
 }

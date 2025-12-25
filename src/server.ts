@@ -5,7 +5,10 @@ import inventoryRoute from "./api/inventory";
 import vehicleRoute from "./api/vehicles";
 import notificationRoute from "./api/notifications";
 import serviceCenterRoute from "./api/service-center";
+import PaymentRoute from "./api/payment";
 import express, { Request, Express, Response } from "express";
+import "./lib/cron-jobs";
+
 
 dotenv.config();
 import http from "http";
@@ -30,6 +33,7 @@ app.use("/api/inventory/", inventoryRoute);
 app.use("/api/vehicles/", vehicleRoute);
 app.use("/api/notifications/", notificationRoute);
 app.use("/api/service-center/", serviceCenterRoute);
+app.use("/api/payment/", PaymentRoute);
 
 io.on("connection", (socket) => {
   console.log("a user connected", socket.id);

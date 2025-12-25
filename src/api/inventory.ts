@@ -89,6 +89,9 @@ app.delete(
         where: {
           id: inventoryItemId,
         },
+        select: {
+          id: true,
+        },
       });
 
       return res.status(200).send("Inventory Item Deleted Successfully");
