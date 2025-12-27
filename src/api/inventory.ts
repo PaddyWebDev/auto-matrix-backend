@@ -1,5 +1,4 @@
 import express, { Express, Request, Response } from "express";
-import { z } from "zod";
 import prisma from "../lib/prisma";
 
 const app: Express = express();
@@ -56,6 +55,67 @@ app.post("/create", async (req: Request, res: Response) => {
     return res.status(500).send("Internal Server Error");
   }
 });
+
+app.patch(
+  "/update-quantity/:inventoryItemId",
+  async function (request: Request, response: Response) {
+    try {
+      const { inventoryItemId } = request.params;
+      const { quantity } = request.body;
+      const { scId } = request.query;
+      if (!inventoryItemId) {
+        return response.status(400).send("Inventory Id is required");
+      }
+      if (!quantity) {
+        return response.status(400).send("Quantity is required");
+      }
+
+      if (!scId) {
+        return response.status(400).send("Quantity is required");
+      }
+
+      const checkIfItemExist = await prisma.inventory.findUnique({
+        where: {
+          id: inventoryItemId,
+        },
+        select: {
+          serviceCenterId: true,
+        },
+      });
+
+      if (!checkIfItemExist) {
+        return response.status(404).send("Inventory Item not found");
+      }
+      if (checkIfItemExist.serviceCenterId !== scId) {
+        return response
+          .status(409)
+          .send("This item doesn't belong to the selected service center.");
+      }
+
+      const updatedQuantity = await prisma.inventory.update({
+        where: {
+          id: inventoryItemId,
+          serviceCenterId: scId,
+        },
+        data: {
+          quantity: {
+            increment: Number(quantity),
+          },
+        },
+        select: {
+          quantity: true,
+        },
+      });
+
+      return response.status(200).json({
+        message: "Stock Quantity Updated Successfully",
+        quantityData: updatedQuantity.quantity,
+      });
+    } catch (error) {
+      return response.status(500).send("Internal Server Error");
+    }
+  }
+);
 
 app.delete(
   "/delete/:inventoryItemId",

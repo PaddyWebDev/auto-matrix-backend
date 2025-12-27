@@ -3,6 +3,7 @@ import { io } from "../server";
 import prisma from "../lib/prisma";
 import { randomUUID } from "crypto";
 import { PaymentStatus } from "@prisma/client";
+import eventHandler from "../lib/EventHandler";
 
 const app: Express = express();
 
@@ -26,7 +27,12 @@ app.post(
       const checkIfAppointmentExist = await prisma.appointment.findUnique({
         where: { id: appointmentId },
         select: {
-          Invoice: true,
+          serviceCenterId: true,
+          Invoice: {
+            select: {
+              id: true,
+            },
+          },
         },
       });
 
@@ -38,30 +44,34 @@ app.post(
         return response.status(404).send("Invoice Not Found");
       }
 
-        await prisma.$transaction(async (tx) => {
-          const transactionId = randomUUID();
+      await prisma.$transaction(async (tx) => {
+        const transactionId = randomUUID();
 
-          await tx.payment.create({
-            data: {
-              amount,
-              appointmentId,
-              invoiceId,
-              transactionId: transactionId,
-              status: PaymentStatus.SUCCESS,
-              method: method,
-              paidAt: new Date(),
-            },
-          });
-
-          await tx.invoice.update({
-            where: {
-              id: invoiceId,
-            },
-            data: {
-              status: "PAID",
-            },
-          });
+        await tx.payment.create({
+          data: {
+            amount,
+            appointmentId,
+            invoiceId,
+            transactionId: transactionId,
+            status: PaymentStatus.SUCCESS,
+            method: method,
+            paidAt: new Date(),
+          },
         });
+
+        await tx.invoice.update({
+          where: {
+            id: invoiceId,
+          },
+          data: {
+            status: "PAID",
+          },
+        });
+      });
+      eventHandler.emit(`appointment-payment-completed`, {
+        serviceCenterId: checkIfAppointmentExist.serviceCenterId,
+        appointmentId,
+      });
       return response.status(201).send("Payment Successful");
     } catch (error) {
       return response.status(500).send("Internal Server Error");

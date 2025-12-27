@@ -1,9 +1,5 @@
 import express, { Express, Request, Response } from "express";
 import prisma from "../lib/prisma";
-import { io } from "../server";
-import { encryptSocketData } from "../utils/cryptr";
-import { bookingStatus, NotificationType } from "@prisma/client";
-import { format } from "date-fns";
 
 const app: Express = express();
 

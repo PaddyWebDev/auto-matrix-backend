@@ -88,7 +88,7 @@ model Appointment {
   slaDeadline               DateTime?
   actualCompletionDate      DateTime?
   slaBreached               Boolean                     @default(false)
-  userUrgency               AppointmentPriority         @default(MEDIUM)
+  priority                  AppointmentPriority?
   status                    bookingStatus
   isAccidental              Boolean                     @default(false)
   photos                    String[]
@@ -104,7 +104,9 @@ model Appointment {
   Payment                   Payment?
   Mechanic                  Mechanic[]
 
-  @@index([vehicleId, userId, serviceCenterId])
+  @@index([vehicleId])
+  @@index([serviceCenterId])
+  @@index([userId])
 }
 
 enum TriageSource {
@@ -247,7 +249,6 @@ enum NotificationTargetType {
 }
 
 enum NotificationType {
-  APPOINTMENT_CREATED
   APPOINTMENT_APPROVED
   APPOINTMENT_REJECTED
   APPOINTMENT_IN_SERVICE
@@ -272,14 +273,22 @@ model CustomerNotification {
   @@index([appointmentId])
 }
 
+enum SCNotificationType {
+  APPOINTMENT_CREATED
+  PAYMENT_COMPLETED
+  LOW_STOCK
+  STOCK_EXHAUSTED
+  APPOINTMENT_APPROVAL_SLA_BREACHED
+}
+
 model ServiceCenterNotification {
-  id              String           @id @default(cuid())
+  id              String             @id @default(cuid())
   serviceCenterId String
-  serviceCenter   ServiceCenter    @relation(fields: [serviceCenterId], references: [id], onDelete: Cascade)
-  type            NotificationType
+  serviceCenter   ServiceCenter      @relation(fields: [serviceCenterId], references: [id], onDelete: Cascade)
+  type            SCNotificationType
   message         String
   appointmentId   String?
-  appointment     Appointment?     @relation(fields: [appointmentId], references: [id])
+  appointment     Appointment?       @relation(fields: [appointmentId], references: [id])
 
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())

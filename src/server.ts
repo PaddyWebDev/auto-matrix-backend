@@ -8,7 +8,7 @@ import serviceCenterRoute from "./api/service-center";
 import PaymentRoute from "./api/payment";
 import express, { Request, Express, Response } from "express";
 import "./lib/cron-jobs";
-
+import "./listeners/appointment.listener";
 
 dotenv.config();
 import http from "http";
