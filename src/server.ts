@@ -9,11 +9,10 @@ import PaymentRoute from "./api/payment";
 import express, { Request, Express, Response } from "express";
 import "./lib/cron-jobs";
 import "./listeners/appointment.listener";
-
-dotenv.config();
 import http from "http";
 import { Server } from "socket.io";
 
+dotenv.config();
 const app: Express = express();
 const PORT = 9000;
 const server = http.createServer(app);
@@ -22,6 +21,9 @@ const io = new Server(server, {
     origin: process.env.FRONT_END_URL,
   },
 });
+
+
+
 // Middleware
 app.use(cors());
 app.use(express.json());

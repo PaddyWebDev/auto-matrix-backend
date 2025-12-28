@@ -7,6 +7,8 @@ import { bookingStatus, NotificationType } from "@prisma/client";
 import jobCardRoute from "./jobcard";
 import eventHandler from "../lib/EventHandler";
 const app: Express = express();
+
+
 // Create appointment
 app.post("/create", async (req: Request, res: Response) => {
   try {
