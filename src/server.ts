@@ -6,11 +6,12 @@ import vehicleRoute from "./api/vehicles";
 import notificationRoute from "./api/notifications";
 import serviceCenterRoute from "./api/service-center";
 import PaymentRoute from "./api/payment";
-import express, { Request, Express, Response } from "express";
+import express, { Express, Response } from "express";
 import "./lib/cron-jobs";
 import "./listeners/appointment.listener";
 import http from "http";
 import { Server } from "socket.io";
+import allowSpecificSource from "./middleware/origin.middleware";
 
 dotenv.config();
 const app: Express = express();
@@ -22,12 +23,11 @@ const io = new Server(server, {
   },
 });
 
-
-
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(allowSpecificSource);
 
 // Routes
 app.use("/api/appointments/", appointmentRoute);

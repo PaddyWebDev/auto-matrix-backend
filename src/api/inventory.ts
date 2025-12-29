@@ -1,20 +1,16 @@
 import express, { Express, Request, Response } from "express";
 import prisma from "../lib/prisma";
+import { io } from "../server";
+import { encryptSocketData } from "../utils/cryptr";
 
 const app: Express = express();
 
 app.post("/create", async (req: Request, res: Response) => {
   try {
-    const {
-      name,
-      sku,
-      brand,
-      category,
-      unitPrice,
-      minimumStock,
-      serviceCenterId,
-    } = req.body;
-    if (!name || !sku || !brand || !category || !unitPrice || !minimumStock) {
+    const { name, sku, brand, category, unitPrice, quantity, serviceCenterId } =
+      req.body;
+
+    if (!name || !sku || !brand || !category || !unitPrice || !quantity) {
       return res.status(400).send("Missing Fields");
     }
 
@@ -42,15 +38,18 @@ app.post("/create", async (req: Request, res: Response) => {
         brand,
         category,
         unitPrice: Number(unitPrice),
-        quantity: Number(minimumStock),
+        quantity: Number(quantity),
         serviceCenterId,
       },
     });
 
-    return res.status(201).json({
-      message: "Created Successfully",
-      new_inventory_item: newInventoryItem,
-    });
+    // send the data through socket instead of response
+    io.emit(
+      `new-inventory-item-${newInventoryItem.serviceCenterId}`,
+      await encryptSocketData(JSON.stringify(newInventoryItem))
+    );
+
+    return res.status(201).send("Created Successfully");
   } catch (error) {
     return res.status(500).send("Internal Server Error");
   }

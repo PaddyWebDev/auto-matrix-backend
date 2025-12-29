@@ -61,15 +61,7 @@ app.post(
   }
 );
 
-app.patch(
-  "/mechanic/:mechanicId/assign",
-  async function (request: Request, response: Response) {
-    try {
-    } catch (error) {
-      return response.status(500).send("Internal Server Error");
-    }
-  }
-);
+
 
 app.patch(
   "/mechanic/:mechanicId/status/update",

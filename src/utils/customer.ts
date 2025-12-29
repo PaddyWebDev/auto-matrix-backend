@@ -12,3 +12,4 @@ export async function checkIfCustomerExistById(userId: string): Promise<{
     },
   });
 }
+

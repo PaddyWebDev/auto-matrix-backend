@@ -59,7 +59,6 @@ eventHandler.on(`appointment-created`, async function (payload) {
         serviceCenterId,
         type: SCNotificationType.APPOINTMENT_CREATED,
         message: `New appointment received: ${appointment.owner.name} has requested ${appointment.serviceType} for ${appointment.Vehicle.vehicleMake} ${appointment.Vehicle.vehicleModel} on ${formattedDate}.`,
-        appointmentId: appointment.id,
       },
     });
 
@@ -76,7 +75,6 @@ eventHandler.on(`appointment-status-update`, async function (payload) {
     data: {
       customerId: appointment.userId,
       message,
-      appointmentId: appointmentId,
       type: type,
     },
   });
@@ -108,7 +106,6 @@ eventHandler.on(`appointment-invoice-created`, async (payload) => {
   const invoiceNotification = await prisma.customerNotification.create({
     data: {
       type: "INVOICE_GENERATED",
-      appointmentId,
       customerId: appointment.userId,
       message: `You have received invoice for the service request kindly pay before ${format(
         updatedInvoice.dueDate,
@@ -140,7 +137,6 @@ eventHandler.on(
       await prisma.serviceCenterNotification.create({
         data: {
           serviceCenterId,
-          appointmentId,
           type: "PAYMENT_COMPLETED",
           message: `The customer has successfully completed the payment for the ${appointment?.serviceType} appointment by the owner on ${formattedDateTime}`,
         },

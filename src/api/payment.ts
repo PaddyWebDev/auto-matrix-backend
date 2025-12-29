@@ -1,5 +1,4 @@
 import express, { Express, Request, Response } from "express";
-import { io } from "../server";
 import prisma from "../lib/prisma";
 import { randomUUID } from "crypto";
 import { PaymentStatus } from "@prisma/client";

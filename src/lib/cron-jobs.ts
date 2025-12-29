@@ -1,5 +1,9 @@
 import cron from "node-cron";
 import prisma from "./prisma";
+import { differenceInDays } from "date-fns";
+import { io } from "../server";
+import { encryptSocketData } from "../utils/cryptr";
+
 
 enum PaymentReminderType {
   TWO_DAYS_BEFORE = "TWO_DAYS_BEFORE",
@@ -19,7 +23,9 @@ cron.schedule("0 1 * * *", async () => {
     await sendReminder(1, PaymentReminderType.ONE_DAY_BEFORE);
     await sendReminder(-1, PaymentReminderType.ONE_DAY_AFTER, true);
 
-    console.log("[CRON] Payment reminder check completed");
+    await remindServiceCenterAboutAppointmentDecision();
+
+    console.log("[CRON] Job Executed");
   } catch (err) {
     console.error("[CRON] Payment reminder failed", err);
   }
@@ -81,5 +87,57 @@ async function sendReminder(
         message: `${message}. Amount: ₹${invoice.totalAmount.toString()}`,
       })),
     });
+  });
+}
+
+async function remindServiceCenterAboutAppointmentDecision() {
+  const noDecisionAppointment = await prisma.appointment.findMany({
+    where: {
+      status: "PENDING",
+    },
+    select: {
+      id: true,
+      requestedDate: true,
+      serviceType: true,
+      serviceCenterId: true,
+    },
+  });
+
+  noDecisionAppointment.forEach(async (appointment) => {
+    const daysDiff = differenceInDays(
+      new Date(),
+      new Date(appointment.requestedDate)
+    );
+
+    if (daysDiff > 2) {
+      const notificationData = await prisma.$transaction(async (tx) => {
+        const newNotification = await tx.serviceCenterNotification.create({
+          data: {
+            serviceCenterId: appointment.serviceCenterId,
+            type: "APPOINTMENT_APPROVAL_SLA_BREACHED",
+            message: `You haven't made decision on the appointment ${appointment.serviceType}`,
+          },
+        });
+
+        await tx.appointment.update({
+          where: {
+            id: appointment.id,
+          },
+          data: {
+            status: "REJECTED",
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        return newNotification;
+      });
+
+      io.emit(
+        `new-appointment-${appointment.serviceCenterId}`,
+        await encryptSocketData(JSON.stringify(notificationData))
+      );
+    }
   });
 }

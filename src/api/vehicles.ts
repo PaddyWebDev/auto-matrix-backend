@@ -1,11 +1,14 @@
 import express, { Express, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { checkIfCustomerExistById } from "../utils/customer";
+import { io } from "../server";
+import { encryptSocketData } from "../utils/cryptr";
 
 const app: Express = express();
 
 app.post("/add", async function (req: Request, res: Response) {
   try {
+    console.log(req);
     const {
       vehicleName,
       vehicleMake,
@@ -39,8 +42,10 @@ app.post("/add", async function (req: Request, res: Response) {
       },
     });
 
-    if(checkIfSameNumberPlateVehicleExist){
-      return res.status(409).send("The number plate used already exist in our system")
+    if (checkIfSameNumberPlateVehicleExist) {
+      return res
+        .status(409)
+        .send("The number plate used already exist in our system");
     }
 
     const data = await prisma.vehicle.create({
@@ -54,10 +59,12 @@ app.post("/add", async function (req: Request, res: Response) {
       },
     });
 
-    return res.status(201).json({
-      new_vehicle: data,
-      message: "Created Successfully",
-    });
+    io.emit(
+      `new-vehicle-${userId}`,
+      await encryptSocketData(JSON.stringify(data))
+    );
+
+    return res.status(201).json("Created Successfully");
   } catch (error) {
     return res.status(500).send("Internal Server Error");
   }
